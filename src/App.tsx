@@ -28,7 +28,7 @@ import {
   getDraftPicks,
   getNFLState,
 } from './services/sleeperApi';
-import { buildManagerDossier } from './services/analyzer';
+import { buildManagerDossier, buildConsensusAdpMaps } from './services/analyzer';
 import { SummaryStrip } from './components/SummaryStrip';
 import { LeagueReportView } from './components/LeagueReportView';
 import { ScoutDossierView } from './components/ScoutDossierView';
@@ -40,10 +40,14 @@ import './App.css';
 const SAMPLE_USERS = ['deep93', 'matt', 'andy', 'jason'];
 
 export function App() {
-  const [usernameInput, setUsernameInput] = useState('deep93');
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialUser = params.get('user') || localStorage.getItem('fs_user') || 'deep93';
+  const initialSeason = params.get('season') || localStorage.getItem('fs_season') || '2026';
+
+  const [usernameInput, setUsernameInput] = useState(initialUser);
   const [currentUser, setCurrentUser] = useState<SleeperUser | null>(null);
-  const [availableSeasons, setAvailableSeasons] = useState<string[]>(['2025', '2024', '2023', '2022']);
-  const [selectedSeason, setSelectedSeason] = useState('2024');
+  const [availableSeasons, setAvailableSeasons] = useState<string[]>(['2026', '2025', '2024', '2023', '2022']);
+  const [selectedSeason, setSelectedSeason] = useState(initialSeason);
   const [leagues, setLeagues] = useState<SleeperLeague[]>([]);
   const [selectedLeague, setSelectedLeague] = useState<SleeperLeague | null>(null);
 
@@ -71,12 +75,26 @@ export function App() {
   const [isLoadingUser, setIsLoadingUser] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  const updateUrlAndStorage = (user: string, season: string, leagueId?: string) => {
+    try {
+      localStorage.setItem('fs_user', user);
+      localStorage.setItem('fs_season', season);
+      const url = new URL(window.location.href);
+      url.searchParams.set('user', user);
+      url.searchParams.set('season', season);
+      if (leagueId) url.searchParams.set('league', leagueId);
+      window.history.replaceState({}, '', url.toString());
+    } catch {
+      // Storage unavailable in sandbox
+    }
+  };
+
   // Initial load
   useEffect(() => {
     async function init() {
       try {
         const nflState = await getNFLState();
-        const curYear = parseInt(nflState.season || '2025', 10);
+        const curYear = parseInt(nflState.season || '2026', 10);
         const dynamicSeasons = [
           String(curYear),
           String(curYear - 1),
@@ -86,16 +104,22 @@ export function App() {
         ];
         const unique = Array.from(new Set(dynamicSeasons));
         setAvailableSeasons(unique);
-        setSelectedSeason('2024');
-        await handleSearch('deep93', '2024', unique);
+
+        const targetSeason = params.get('season') || localStorage.getItem('fs_season') || String(curYear);
+        const targetUser = params.get('user') || localStorage.getItem('fs_user') || 'deep93';
+        const targetLeague = params.get('league') || undefined;
+
+        setSelectedSeason(targetSeason);
+        setUsernameInput(targetUser);
+        await handleSearch(targetUser, targetSeason, unique, targetLeague);
       } catch {
-        handleSearch('deep93', '2024', ['2025', '2024', '2023', '2022']);
+        handleSearch(initialUser, initialSeason, ['2026', '2025', '2024', '2023']);
       }
     }
     init();
   }, []);
 
-  const handleSearch = async (username: string, season: string, seasonList?: string[]) => {
+  const handleSearch = async (username: string, season: string, seasonList?: string[], preferredLeagueId?: string) => {
     if (!username.trim()) return;
     try {
       setErrorMsg(null);
@@ -104,6 +128,8 @@ export function App() {
       setSelectedOpponent(null);
       setScoutProfile(null);
       setLeagueProfiles(new Map());
+
+      updateUrlAndStorage(username, season, preferredLeagueId);
 
       const user = await getSleeperUser(username);
       setCurrentUser(user);
@@ -117,6 +143,7 @@ export function App() {
             if (check.length > 0) {
               userLeagues = check;
               setSelectedSeason(s);
+              updateUrlAndStorage(username, s);
               break;
             }
           }
@@ -126,10 +153,12 @@ export function App() {
       setLeagues(userLeagues);
 
       if (userLeagues.length > 0) {
-        // Prioritize Sunday Funday if found
-        const sundayFunday =
-          userLeagues.find((l) => l.name.toLowerCase().includes('sunday funday')) || userLeagues[0];
-        await handleSelectLeague(sundayFunday, user.user_id);
+        // If preferredLeagueId provided from URL, pick that; otherwise Sunday Funday or first
+        const matchedLeague =
+          (preferredLeagueId && userLeagues.find((l) => l.league_id === preferredLeagueId)) ||
+          userLeagues.find((l) => l.name.toLowerCase().includes('sunday funday')) ||
+          userLeagues[0];
+        await handleSelectLeague(matchedLeague, user.user_id);
       }
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Error fetching Sleeper data');
@@ -142,6 +171,8 @@ export function App() {
     try {
       setSelectedLeague(league);
       setLeagueProfiles(new Map());
+      updateUrlAndStorage(usernameInput, selectedSeason, league.league_id);
+
       const users = await getLeagueUsers(league.league_id);
       setLeagueUsers(users);
 
@@ -154,13 +185,13 @@ export function App() {
     }
   };
 
-  // Analyze all league mates across all their drafts in parallel
+  // Analyze all league mates across all their drafts in parallel with separate Redraft/Dynasty ADP
   const analyzeEntireLeague = async (users: SleeperLeagueUser[]) => {
     try {
       setIsAnalyzingLeague(true);
       const seasonsToScan = availableSeasons.slice(0, 4);
 
-      // 1. Gather all drafts for all users
+      // 1. Gather drafts for all users
       const userDraftsMap = new Map<string, SleeperDraft[]>();
       await Promise.all(
         users.map(async (u) => {
@@ -176,17 +207,18 @@ export function App() {
         })
       );
 
-      // 2. Fetch picks for drafts & build consensus ADP
+      // 2. Fetch picks for drafts
       const draftPicksCache = new Map<string, SleeperDraftPick[]>();
-      const allDraftIds = new Set<string>();
+      const allDraftMap = new Map<string, SleeperDraft>();
+
       for (const drafts of userDraftsMap.values()) {
         for (const d of drafts.slice(0, 4)) {
-          allDraftIds.add(d.draft_id);
+          allDraftMap.set(d.draft_id, d);
         }
       }
 
       await Promise.all(
-        Array.from(allDraftIds).map(async (draftId) => {
+        Array.from(allDraftMap.keys()).map(async (draftId) => {
           try {
             const picks = await getDraftPicks(draftId);
             draftPicksCache.set(draftId, picks);
@@ -196,22 +228,14 @@ export function App() {
         })
       );
 
-      const playerPicksSum = new Map<string, { total: number; count: number }>();
-      for (const picks of draftPicksCache.values()) {
-        for (const p of picks) {
-          if (!p.player_id) continue;
-          const cur = playerPicksSum.get(p.player_id) || { total: 0, count: 0 };
-          cur.total += p.pick_no;
-          cur.count += 1;
-          playerPicksSum.set(p.player_id, cur);
-        }
-      }
-      const globalAdp = new Map<string, number>();
-      for (const [pid, data] of playerPicksSum.entries()) {
-        globalAdp.set(pid, Math.round(data.total / data.count));
-      }
+      // 3. Build distinct consensus ADP maps for Redraft vs Dynasty
+      const allDraftsWithPicks = Array.from(allDraftMap.entries()).map(([draftId, draft]) => ({
+        draft,
+        picks: draftPicksCache.get(draftId) || [],
+      }));
+      const adpMaps = buildConsensusAdpMaps(allDraftsWithPicks);
 
-      // 3. Build dossiers for each manager
+      // 4. Build dossiers for each manager
       const profiles = new Map<string, ManagerScoutProfile>();
       for (const u of users) {
         const uDrafts = userDraftsMap.get(u.user_id) || [];
@@ -219,7 +243,7 @@ export function App() {
           draft: d,
           picks: draftPicksCache.get(d.draft_id) || [],
         }));
-        const profile = buildManagerDossier(u, draftsWithPicks, globalAdp, formatFilter);
+        const profile = buildManagerDossier(u, draftsWithPicks, adpMaps, formatFilter);
         profiles.set(u.user_id, profile);
       }
 
@@ -267,7 +291,8 @@ export function App() {
           }
         })
       );
-      const profile = buildManagerDossier(targetUser, draftsWithPicks, undefined, formatFilter);
+      const adpMaps = buildConsensusAdpMaps(draftsWithPicks);
+      const profile = buildManagerDossier(targetUser, draftsWithPicks, adpMaps, formatFilter);
       setScoutProfile(profile);
       setLeagueProfiles((prev) => new Map(prev).set(targetUser.user_id, profile));
     } catch (err: unknown) {

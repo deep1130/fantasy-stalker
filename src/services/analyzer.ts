@@ -1,11 +1,19 @@
-import { SleeperLeagueUser, SleeperDraftPick, SleeperDraft, ManagerScoutProfile, PositionStat, PositionTiming, ReachItem } from '../types/sleeper';
+import {
+  SleeperLeagueUser,
+  SleeperDraftPick,
+  SleeperDraft,
+  ManagerScoutProfile,
+  PositionStat,
+  PositionTiming,
+  ReachItem,
+} from '../types/sleeper';
 
 const POSITION_COLORS: Record<string, string> = {
   RB: '#3b82f6', // blue
   WR: '#10b981', // emerald
   QB: '#f59e0b', // amber
   TE: '#f97316', // orange
-  K: '#a855f7',  // purple
+  K: '#a855f7', // purple
   DEF: '#ec4899', // pink
 };
 
@@ -14,31 +22,62 @@ export function isDraftDynasty(draft: SleeperDraft): boolean {
   if (draft.type === 'linear') return true;
   const scoring = (draft.metadata?.scoring_type || '').toLowerCase();
   const name = (draft.metadata?.name || '').toLowerCase();
-  return scoring.includes('dynasty') || name.includes('dynasty');
+  return scoring.includes('dynasty') || name.includes('dynasty') || name.includes('rookie');
+}
+
+/**
+ * Builds separate consensus ADP maps for redraft and dynasty rookie drafts
+ */
+export function buildConsensusAdpMaps(draftsWithPicks: { draft: SleeperDraft; picks: SleeperDraftPick[] }[]) {
+  const redraftSums = new Map<string, { total: number; count: number }>();
+  const dynastySums = new Map<string, { total: number; count: number }>();
+
+  for (const { draft, picks } of draftsWithPicks) {
+    const isDyn = isDraftDynasty(draft);
+    const targetMap = isDyn ? dynastySums : redraftSums;
+
+    for (const p of picks) {
+      if (!p.player_id) continue;
+      const cur = targetMap.get(p.player_id) || { total: 0, count: 0 };
+      cur.total += p.pick_no;
+      cur.count += 1;
+      targetMap.set(p.player_id, cur);
+    }
+  }
+
+  const redraftAdp = new Map<string, number>();
+  for (const [pid, data] of redraftSums.entries()) {
+    redraftAdp.set(pid, Math.round(data.total / data.count));
+  }
+
+  const dynastyAdp = new Map<string, number>();
+  for (const [pid, data] of dynastySums.entries()) {
+    dynastyAdp.set(pid, Math.round(data.total / data.count));
+  }
+
+  return { redraftAdp, dynastyAdp };
 }
 
 export function buildManagerDossier(
   targetUser: SleeperLeagueUser,
   draftsWithPicks: { draft: SleeperDraft; picks: SleeperDraftPick[] }[],
-  globalPlayerAdpMap?: Map<string, number>,
+  globalAdpMaps?: { redraftAdp: Map<string, number>; dynastyAdp: Map<string, number> } | Map<string, number>,
   formatFilter: 'all' | 'redraft' | 'dynasty' = 'all'
 ): ManagerScoutProfile {
-  // If no global ADP map provided, build an in-sample ADP map from the drafts provided
-  const adpMap = globalPlayerAdpMap || new Map<string, number>();
-  if (!globalPlayerAdpMap) {
-    const playerPicksSum = new Map<string, { totalPick: number; count: number }>();
-    for (const { picks } of draftsWithPicks) {
-      for (const p of picks) {
-        if (!p.player_id) continue;
-        const cur = playerPicksSum.get(p.player_id) || { totalPick: 0, count: 0 };
-        cur.totalPick += p.pick_no;
-        cur.count += 1;
-        playerPicksSum.set(p.player_id, cur);
-      }
-    }
-    for (const [pid, data] of playerPicksSum.entries()) {
-      adpMap.set(pid, Math.round(data.totalPick / data.count));
-    }
+  // Build in-sample ADP maps if not provided
+  let redraftAdp: Map<string, number>;
+  let dynastyAdp: Map<string, number>;
+
+  if (globalAdpMaps && 'redraftAdp' in globalAdpMaps) {
+    redraftAdp = globalAdpMaps.redraftAdp;
+    dynastyAdp = globalAdpMaps.dynastyAdp;
+  } else if (globalAdpMaps instanceof Map) {
+    redraftAdp = globalAdpMaps;
+    dynastyAdp = globalAdpMaps;
+  } else {
+    const maps = buildConsensusAdpMaps(draftsWithPicks);
+    redraftAdp = maps.redraftAdp;
+    dynastyAdp = maps.dynastyAdp;
   }
 
   // Filter drafts based on format filter
@@ -49,7 +88,13 @@ export function buildManagerDossier(
     return true;
   });
 
-  const userPicks: (SleeperDraftPick & { draftName?: string; season?: string; isDynasty?: boolean; adp?: number })[] = [];
+  const userPicks: (SleeperDraftPick & {
+    draftName?: string;
+    season?: string;
+    isDynasty?: boolean;
+    adp?: number;
+  })[] = [];
+
   let redraftCount = 0;
   let dynastyCount = 0;
 
@@ -71,7 +116,8 @@ export function buildManagerDossier(
       .filter((p) => p.picked_by === targetUser.user_id)
       .sort((a, b) => a.pick_no - b.pick_no);
 
-    // Compute timing for this draft
+    const relevantAdpMap = isDyn ? dynastyAdp : redraftAdp;
+
     let foundQb1 = false;
     let foundRb1 = false;
     let foundRb2 = false;
@@ -80,8 +126,8 @@ export function buildManagerDossier(
     let foundTe1 = false;
 
     for (const p of draftUserPicks) {
-      const pos = (p.metadata.position || 'FLEX').toUpperCase();
-      const expectedAdp = adpMap.get(p.player_id) || p.pick_no;
+      const pos = (p.metadata?.position || 'FLEX').toUpperCase();
+      const expectedAdp = relevantAdpMap.get(p.player_id) || p.pick_no;
 
       userPicks.push({
         ...p,
@@ -120,7 +166,6 @@ export function buildManagerDossier(
   const totalPicks = userPicks.length;
   const completedDraftsCount = filteredDrafts.filter((d) => d.picks.length > 0).length;
 
-  // 1. Positional counts
   const posCounts: Record<string, number> = { RB: 0, WR: 0, QB: 0, TE: 0, K: 0, DEF: 0 };
   const teamCounts: Record<string, number> = {};
   const playerCounts: Record<string, { count: number; position: string; team: string }> = {};
@@ -136,26 +181,26 @@ export function buildManagerDossier(
   let rookieCount = 0;
 
   for (const p of userPicks) {
-    const pos = (p.metadata.position || 'FLEX').toUpperCase();
+    const pos = (p.metadata?.position || 'FLEX').toUpperCase();
     if (pos in posCounts) {
       posCounts[pos] += 1;
     } else {
       posCounts[pos] = (posCounts[pos] || 0) + 1;
     }
 
-    const team = p.metadata.team || 'FA';
+    const team = p.metadata?.team || 'FA';
     if (team && team !== 'FA') {
       teamCounts[team] = (teamCounts[team] || 0) + 1;
     }
 
-    const playerName = `${p.metadata.first_name || ''} ${p.metadata.last_name || ''}`.trim() || 'Unknown Player';
+    const playerName = `${p.metadata?.first_name || ''} ${p.metadata?.last_name || ''}`.trim() || 'Unknown Player';
     if (!playerCounts[playerName]) {
       playerCounts[playerName] = { count: 1, position: pos, team };
     } else {
       playerCounts[playerName].count += 1;
     }
 
-    if (p.metadata.years_exp === '0' || p.metadata.years_exp === '1') {
+    if (p.metadata?.years_exp === '0' || p.metadata?.years_exp === '1') {
       rookieCount += 1;
     }
 
@@ -174,10 +219,19 @@ export function buildManagerDossier(
       if (pos === 'TE') earlyTEs += 1;
     }
 
-    // Reach vs Value calculation against consensus ADP
+    // Context-Aware Reach vs Steal logic:
+    // A reach is picking a player significantly ahead of consensus ADP.
+    // Early rounds require 8+ spots (almost a full round in 12-team),
+    // Middle rounds require 14+ spots, late rounds require 20+ spots.
     const expectedAdp = p.adp || p.pick_no;
-    const diff = expectedAdp - p.pick_no; // > 0 means drafted earlier than ADP (reach)
-    if (diff >= 5) {
+    const diff = expectedAdp - p.pick_no; // > 0 means picked earlier than expected ADP
+
+    let reachThreshold = 10;
+    if (p.round <= 3) reachThreshold = 8;
+    else if (p.round <= 7) reachThreshold = 14;
+    else reachThreshold = 20;
+
+    if (diff >= reachThreshold) {
       reaches.push({
         player: playerName,
         position: pos,
@@ -188,7 +242,7 @@ export function buildManagerDossier(
         round: p.round,
         draftName: p.draftName,
       });
-    } else if (diff <= -5) {
+    } else if (diff <= -reachThreshold) {
       steals.push({
         player: playerName,
         position: pos,
@@ -202,8 +256,10 @@ export function buildManagerDossier(
     }
   }
 
-  // Average position timing helper
-  const avg = (arr: number[]): number | null => (arr.length > 0 ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : null);
+  // Positional average rounds
+  const avg = (arr: number[]): number | null =>
+    arr.length > 0 ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1)) : null;
+
   const positionTiming: PositionTiming = {
     qb1Round: avg(qb1List),
     rb1Round: avg(rb1List),
@@ -213,7 +269,6 @@ export function buildManagerDossier(
     te1Round: avg(te1List),
   };
 
-  // Positional Stats with percentages
   const positionStats: PositionStat[] = Object.entries(posCounts)
     .filter(([pos]) => ['RB', 'WR', 'QB', 'TE', 'K', 'DEF'].includes(pos))
     .map(([position, count]) => ({
@@ -246,108 +301,140 @@ export function buildManagerDossier(
 
   // Reach Statistics
   const reachRatePct = totalPicks > 0 ? Math.round((reaches.length / totalPicks) * 100) : 0;
+  const stealRatePct = totalPicks > 0 ? Math.round((steals.length / totalPicks) * 100) : 0;
   const topReaches = reaches.sort((a, b) => b.diff - a.diff).slice(0, 4);
   const topSteals = steals.sort((a, b) => b.diff - a.diff).slice(0, 4);
 
-  // DNA Badges & Tactical Notes
+  // Diverse Draft Archetypes
   const dnaBadges: { title: string; desc: string; icon: string }[] = [];
   const scoutingNotes: string[] = [];
 
-  // Reach Tendency Archetype
-  if (reachRatePct >= 28) {
-    dnaBadges.push({
-      title: 'Aggressive Reacher',
-      desc: `Reaches on ${reachRatePct}% of picks ahead of consensus ADP. Unafraid to grab "their guys".`,
-      icon: 'Zap',
-    });
-    scoutingNotes.push(`High reach propensity (${reachRatePct}% reaches). If there is a buzz player they like, do not wait for standard ADP; take them a round earlier.`);
-  } else if (steals.length >= reaches.length + 3) {
-    dnaBadges.push({
-      title: 'Value Opportunist',
-      desc: 'Rarely reaches; capitalizes consistently on tumbling draft board value.',
-      icon: 'Crosshair',
-    });
-    scoutingNotes.push('Disciplined board stalker. Does not force positional needs and scoops up sliding talent.');
+  // 1. Structural Strategy Archetypes
+  if (positionTiming.rb1Round !== null && positionTiming.rb2Round !== null) {
+    if (positionTiming.rb1Round <= 2.2 && positionTiming.rb2Round >= 6.0) {
+      dnaBadges.push({
+        title: 'Hero RB Anchor',
+        desc: `Locks down an elite RB1 early (R${positionTiming.rb1Round}), then floods WRs before picking RB2 (R${positionTiming.rb2Round}).`,
+        icon: 'Shield',
+      });
+      scoutingNotes.push(`Textbook Hero RB drafter (RB1: R${positionTiming.rb1Round}, RB2: R${positionTiming.rb2Round}). Expect heavy middle-round WR hoarding.`);
+    } else if (positionTiming.rb1Round >= 4.5) {
+      dnaBadges.push({
+        title: 'Zero RB Zealot',
+        desc: `Punts RB1 until Round ${positionTiming.rb1Round}, heavily prioritizing early pass-catchers and elite QB.`,
+        icon: 'Zap',
+      });
+      scoutingNotes.push(`Zero RB practitioner (waits until R${positionTiming.rb1Round} for RB1). Will target late-round high-upside backup running backs.`);
+    } else if (positionTiming.rb1Round <= 2.0 && positionTiming.rb2Round <= 3.2) {
+      dnaBadges.push({
+        title: 'Dual Bellcow Bully',
+        desc: `Locks in two workhorse RBs in the first 3 rounds (Avg R${positionTiming.rb1Round} & R${positionTiming.rb2Round}).`,
+        icon: 'Shield',
+      });
+      scoutingNotes.push(`Traditional Heavy-RB drafter (2 RBs by R${positionTiming.rb2Round}). Will spark early RB runs.`);
+    }
   }
 
-  // Positional Target Timing Insights
+  // 2. QB & TE Priority Archetypes
   if (positionTiming.qb1Round !== null) {
     if (positionTiming.qb1Round <= 3.5) {
       dnaBadges.push({
-        title: 'Early QB Hunter',
-        desc: `Locks down QB1 early (Avg Round ${positionTiming.qb1Round}).`,
-        icon: 'Zap',
+        title: 'Elite QB Anchor',
+        desc: `Pays a premium for top-tier QB early (Avg Round ${positionTiming.qb1Round}).`,
+        icon: 'Crown',
       });
-      scoutingNotes.push(`Targets QB1 early (Avg Round ${positionTiming.qb1Round}). Jump ahead of them in round 3 if targeting elite tier QBs.`);
-    } else if (positionTiming.qb1Round >= 8) {
-      scoutingNotes.push(`Late QB streamer (Avg QB1 in Round ${positionTiming.qb1Round}). You can safely wait on QB when picking before them.`);
-    }
-  }
-
-  if (positionTiming.rb1Round !== null && positionTiming.rb2Round !== null) {
-    if (positionTiming.rb1Round <= 2 && positionTiming.rb2Round <= 3) {
+      scoutingNotes.push(`Prioritizes elite QB in rounds 2–3 (Avg R${positionTiming.qb1Round}). Jump ahead of them if targeting top QBs.`);
+    } else if (positionTiming.qb1Round >= 9.0) {
       dnaBadges.push({
-        title: 'Bellcow Hoarder',
-        desc: `Secures RB1 & RB2 within the first 3 rounds (Avg R${positionTiming.rb1Round} & R${positionTiming.rb2Round}).`,
-        icon: 'Shield',
+        title: 'Late QB Streamer',
+        desc: `Waits until double-digit rounds for QB1 (Avg Round ${positionTiming.qb1Round}).`,
+        icon: 'Compass',
       });
-      scoutingNotes.push(`RB Heavy opening (Avg RB1: R${positionTiming.rb1Round}, RB2: R${positionTiming.rb2Round}). Expect early RB runs.`);
+      scoutingNotes.push(`Patient on quarterbacks (Avg R${positionTiming.qb1Round}). You can safely wait on QB when picking before them.`);
     }
   }
 
-  if (positionTiming.te1Round !== null && positionTiming.te1Round <= 4) {
-    dnaBadges.push({
-      title: 'Elite TE Chaser',
-      desc: `Drafts top-tier tight end early (Avg Round ${positionTiming.te1Round}).`,
-      icon: 'Crown',
-    });
+  if (positionTiming.te1Round !== null) {
+    if (positionTiming.te1Round <= 3.8) {
+      dnaBadges.push({
+        title: 'Elite TE Specialist',
+        desc: `Invests high draft capital in difference-maker TE (Avg Round ${positionTiming.te1Round}).`,
+        icon: 'Crown',
+      });
+      scoutingNotes.push(`Aggressive on top tight ends (Avg R${positionTiming.te1Round}). Expect them to pull the trigger on tier 1 TEs.`);
+    } else if (positionTiming.te1Round >= 10.0) {
+      dnaBadges.push({
+        title: 'Late TE Punter',
+        desc: `Refuses early TE draft capital; drafts TE1 late (Avg Round ${positionTiming.te1Round}).`,
+        icon: 'Compass',
+      });
+    }
   }
 
-  // Dynasty Specific Insights
+  // 3. Draft Board Discipline / Reach vs Steal Archetype
+  if (reachRatePct >= 25 && reachRatePct > stealRatePct + 10) {
+    dnaBadges.push({
+      title: 'Aggressive Reacher',
+      desc: `Reaches on ${reachRatePct}% of picks ahead of market ADP. Drafts 'their guys' without hesitation.`,
+      icon: 'Zap',
+    });
+    scoutingNotes.push(`Genuine reach tendency (${reachRatePct}% reaches). If there is a trending breakout player they like, take them early.`);
+  } else if (stealRatePct >= 25 && stealRatePct > reachRatePct + 10) {
+    dnaBadges.push({
+      title: 'BPA Value Hunter',
+      desc: `Consistently capitalizes on tumbling draft value (${stealRatePct}% value steals).`,
+      icon: 'Crosshair',
+    });
+    scoutingNotes.push('Patient board stalker. Does not reach for positions and scoops up sliding ADP value.');
+  }
+
+  // 4. Dynasty Specific Insights
   if (dynastyCount > 0) {
     if (rookieCount >= 4) {
       dnaBadges.push({
-        title: 'Dynasty Rookie Addict',
-        desc: `Accumulates young talent (${rookieCount} rookies/sophomores drafted in dynasty leagues).`,
+        title: 'Dynasty Youth Hoarder',
+        desc: `High appetite for rookie upside (${rookieCount} rookies drafted across dynasty formats).`,
         icon: 'Sparkles',
       });
-      scoutingNotes.push('High dynasty appetite for rookie upside. Expect them to trade up or reach on young playmakers.');
     } else {
       dnaBadges.push({
         title: 'Win-Now Dynasty Builder',
-        desc: 'Prioritizes proven veteran production over raw rookie speculation in dynasty formats.',
+        desc: 'Prioritizes battle-tested veteran production over rookie lottery tickets in dynasty formats.',
         icon: 'Trophy',
       });
     }
   }
 
+  // 5. NFL Franchise Bias
   if (favoriteTeams.length > 0 && favoriteTeams[0].count >= 3) {
     dnaBadges.push({
-      title: `Team Bias: ${favoriteTeams[0].team}`,
-      desc: `Drafted ${favoriteTeams[0].count} players from ${favoriteTeams[0].team}. Possible home team loyalty.`,
+      title: `${favoriteTeams[0].team} Fanatic`,
+      desc: `Drafted ${favoriteTeams[0].count} players from ${favoriteTeams[0].team}. Observable NFL franchise loyalty.`,
       icon: 'Flame',
     });
-    scoutingNotes.push(`Strong loyalty to ${favoriteTeams[0].team} (${favoriteTeams[0].count} picks). Anticipate reaches on their key starters.`);
+    scoutingNotes.push(`Noteworthy loyalty to ${favoriteTeams[0].team} (${favoriteTeams[0].count} picks). Expect slight reach premium on their starters.`);
   }
 
+  // Fallback if balanced
   if (dnaBadges.length === 0) {
     dnaBadges.push({
-      title: 'Balanced Drafter',
-      desc: 'Balances positional needs flexibly without rigid biases.',
+      title: 'Balanced Board Stalker',
+      desc: 'Maintains fluid draft discipline; responds flexibly to board runs without rigid biases.',
       icon: 'Crosshair',
     });
+    scoutingNotes.push('Balanced drafter. Balances positional needs without extreme early reaches or rigid dogma.');
   }
 
   let threatLevel: ManagerScoutProfile['threatLevel'] = 'VALUE HUNTER';
   let threatColor = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
 
-  if (completedDraftsCount >= 4 || reachRatePct <= 15) {
+  if (stealRatePct >= 25 && reachRatePct <= 15) {
     threatLevel = 'TACTICAL MASTERMIND';
     threatColor = 'text-purple-400 bg-purple-500/10 border-purple-500/30';
-  } else if (reachRatePct >= 30) {
+  } else if (reachRatePct >= 28) {
     threatLevel = 'WILDCARD';
     threatColor = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
-  } else if (completedDraftsCount >= 2) {
+  } else if (completedDraftsCount >= 3) {
     threatLevel = 'HIGH THREAT';
     threatColor = 'text-rose-400 bg-rose-500/10 border-rose-500/30';
   } else {
@@ -388,6 +475,8 @@ export function buildManagerDossier(
     favoriteTeams,
     repeatPlayers,
     scoutingNotes,
-    draftHistory: userPicks.sort((a, b) => (a.season === b.season ? a.pick_no - b.pick_no : (b.season || '').localeCompare(a.season || ''))),
+    draftHistory: userPicks.sort((a, b) =>
+      a.season === b.season ? a.pick_no - b.pick_no : (b.season || '').localeCompare(a.season || '')
+    ),
   };
 }
