@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AlertCircle, Search, Users, Target, History, LayoutGrid, Loader2, Compass, ShieldAlert, Sparkles } from 'lucide-react';
+import { AlertCircle, Search, Users, Target, History, LayoutGrid, Loader2, Compass, ShieldAlert, Sparkles, RefreshCw } from 'lucide-react';
 import {
   SleeperUser,
   SleeperLeague,
@@ -61,8 +61,6 @@ export function App() {
         ];
         const unique = Array.from(new Set(dynamicSeasons));
         setAvailableSeasons(unique);
-        
-        // Check if user has leagues in curYear, otherwise fallback to previous active season
         setSelectedSeason(String(curYear));
         await handleSearch('matt', String(curYear), unique);
       } catch {
@@ -86,13 +84,13 @@ export function App() {
 
       let userLeagues = await getUserLeagues(user.user_id, season);
 
-      // If no leagues found in selected season on first search, fallback to 2024 or 2025 where leagues exist
+      // If no leagues in this season, search other seasons
       if (userLeagues.length === 0 && seasonList && seasonList.length > 0) {
         for (const s of seasonList) {
           if (s !== season) {
-            const checkLeagues = await getUserLeagues(user.user_id, s);
-            if (checkLeagues.length > 0) {
-              userLeagues = checkLeagues;
+            const check = await getUserLeagues(user.user_id, s);
+            if (check.length > 0) {
+              userLeagues = check;
               setSelectedSeason(s);
               break;
             }
@@ -138,7 +136,6 @@ export function App() {
       setIsScoutingOpponent(true);
       setErrorMsg(null);
 
-      // Fetch across all recent seasons (including current, 2025, 2024, 2023)
       const seasonsToScan = availableSeasons.slice(0, 4);
       const draftFetches = seasonsToScan.map((s) =>
         getUserDrafts(targetUser.user_id, s).catch(() => [] as SleeperDraft[])
@@ -175,7 +172,6 @@ export function App() {
     if (r.owner_id) rosterMap.set(r.owner_id, r);
   }
 
-  // Filtered opponents
   const filteredUsers = leagueUsers.filter((u) => {
     if (!searchFilter.trim()) return true;
     const term = searchFilter.toLowerCase();
@@ -186,20 +182,20 @@ export function App() {
   });
 
   return (
-    <div className="app-shell">
+    <main className="app-shell">
       {/* TOPBAR */}
       <header className="topbar">
-        <a href="./" className="brand">
+        <a href="./" className="brand" title="Fantasy Stalker">
           <span className="brand-mark">FS</span>
           <span>
-            FANTASY STALKER <span className="brand-light">· SLEEPER DRAFT SCOUT</span>
+            FANTASY<span className="brand-light">STALKER</span>
           </span>
         </a>
 
         <div className="topbar-right">
           <span className="season-label">NFL {selectedSeason}</span>
           <span className="live-dot" />
-          <span className="live-label">PUBLIC SLEEPER API</span>
+          <span className="live-label">LIVE DATA</span>
         </div>
       </header>
 
@@ -207,7 +203,7 @@ export function App() {
       <section className="intro">
         <div>
           <p className="eyebrow">
-            SLEEPER DRAFT INTELLIGENCE <span>//</span> OPPONENT SCOUTING DOSSIER
+            SLEEPER DRAFT INTELLIGENCE <span>·</span> {selectedLeague ? selectedLeague.name.toUpperCase() : 'SCOUTING DOSSIER'}
           </p>
           <h1>
             Who did they draft? <em>How do they draft?</em>
@@ -218,14 +214,16 @@ export function App() {
         </div>
 
         <div className="league-control">
-          <label>Sleeper Username</label>
+          <label htmlFor="sleeper-user">SLEEPER USERNAME</label>
           <div className="league-input-row">
             <input
+              id="sleeper-user"
               type="text"
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               placeholder="e.g. matt"
               onKeyDown={(e) => e.key === 'Enter' && handleSearch(usernameInput, selectedSeason)}
+              disabled={isLoadingUser}
             />
             <select
               value={selectedSeason}
@@ -234,6 +232,7 @@ export function App() {
                 handleSearch(usernameInput, e.target.value);
               }}
               className="season-select"
+              aria-label="Select season"
             >
               {availableSeasons.map((s) => (
                 <option key={s} value={s}>
@@ -242,11 +241,13 @@ export function App() {
               ))}
             </select>
             <button
+              type="button"
               onClick={() => handleSearch(usernameInput, selectedSeason)}
               disabled={isLoadingUser}
               className="refresh-button"
             >
-              {isLoadingUser ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'SCAN LEAGUES'}
+              <RefreshCw size={13} className={isLoadingUser ? 'spin' : ''} />
+              <span>{isLoadingUser ? 'Loading…' : 'Scan'}</span>
             </button>
           </div>
           <div className="refresh-meta">
@@ -254,6 +255,7 @@ export function App() {
             {SAMPLE_USERS.map((user) => (
               <button
                 key={user}
+                type="button"
                 onClick={() => {
                   setUsernameInput(user);
                   handleSearch(user, selectedSeason);
@@ -269,14 +271,15 @@ export function App() {
 
       {/* ERROR BANNER */}
       {errorMsg && (
-        <div className="error-banner">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <div className="error-banner" role="alert">
+          <AlertCircle size={16} />
           <span>{errorMsg}</span>
+          <button type="button" onClick={() => setErrorMsg(null)}>Dismiss</button>
         </div>
       )}
 
       {/* SUMMARY STRIP (4 KPIS) */}
-      <section className="summary-strip">
+      <section className="summary-strip" aria-label="Overview Strip">
         <div className="summary-item">
           <span className="summary-label">ACTIVE LEAGUES</span>
           <strong>{leagues.length} Leagues</strong>
@@ -319,11 +322,12 @@ export function App() {
 
       {/* LEAGUE SELECTOR PILLS */}
       {leagues.length > 1 && (
-        <div style={{ marginBottom: '24px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ marginBottom: '20px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
           <span style={{ fontSize: '11px', fontFamily: 'var(--mono)', color: 'var(--muted)' }}>SELECT LEAGUE:</span>
           {leagues.map((l) => (
             <button
               key={l.league_id}
+              type="button"
               onClick={() => handleSelectLeague(l)}
               className={`action-btn ${l.league_id === selectedLeague?.league_id ? 'active' : ''}`}
             >
@@ -337,52 +341,65 @@ export function App() {
       <section>
         <div className="section-heading">
           <div>
-            <h2>{selectedLeague?.name || 'League Opponents & Draft Dossier'}</h2>
-            <p>
-              {selectedLeague ? `${selectedLeague.total_rosters} Teams · Status: ${selectedLeague.status}` : 'Select a league to begin scouting'}
+            <p className="eyebrow">
+              {activeTab === 'opponents' && 'LEAGUE OPPONENTS'}
+              {activeTab === 'dossier' && 'MANAGER SCOUTING DOSSIER'}
+              {activeTab === 'picks' && 'HISTORICAL PICK LOG'}
+              {activeTab === 'draftboard' && 'DRAFT BOARD MATRIX'}
+              <span>·</span> {selectedLeague ? `${selectedLeague.total_rosters} TEAMS` : 'SCOUTING'}
             </p>
+            <h2>
+              {activeTab === 'opponents' && 'League Opponents & Draft Profiles'}
+              {activeTab === 'dossier' && `Scouting Dossier: ${selectedOpponent?.display_name || ''}`}
+              {activeTab === 'picks' && `Historical Picks: ${selectedOpponent?.display_name || ''}`}
+              {activeTab === 'draftboard' && `${selectedLeague?.name || ''} Draft Board`}
+            </h2>
           </div>
 
           <div className="board-tools">
             <div className="search-box">
-              <Search className="w-3.5 h-3.5 text-muted" />
+              <Search size={14} />
               <input
                 type="text"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder="Filter managers..."
+                placeholder="Filter managers…"
               />
             </div>
 
             <div className="view-tabs">
               <button
+                type="button"
                 onClick={() => setActiveTab('opponents')}
                 className={activeTab === 'opponents' ? 'selected' : ''}
               >
-                <Users className="w-3.5 h-3.5" />
+                <Users size={12} />
                 <span>Opponents</span>
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('dossier')}
                 className={activeTab === 'dossier' ? 'selected' : ''}
               >
-                <Target className="w-3.5 h-3.5" />
-                <span>Scout Dossier</span>
+                <Target size={12} />
+                <span>Dossier</span>
               </button>
               <button
+                type="button"
                 onClick={() => setActiveTab('picks')}
                 className={activeTab === 'picks' ? 'selected' : ''}
               >
-                <History className="w-3.5 h-3.5" />
+                <History size={12} />
                 <span>Pick Log</span>
               </button>
               {selectedLeague?.draft_id && (
                 <button
+                  type="button"
                   onClick={() => setIsDraftBoardModalOpen(true)}
                   className="selected"
                   style={{ background: 'var(--accent-soft)', color: 'var(--accent-text)', border: '1px solid var(--accent-border)' }}
                 >
-                  <LayoutGrid className="w-3.5 h-3.5" />
+                  <LayoutGrid size={12} />
                   <span>Draft Board</span>
                 </button>
               )}
@@ -390,73 +407,139 @@ export function App() {
           </div>
         </div>
 
-        {/* TAB 1: OPPONENTS TABLE */}
+        {/* TAB 1: OPPONENTS */}
         {activeTab === 'opponents' && (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th className="th-rank">#</th>
-                  <th>Manager / Team</th>
-                  <th>Record</th>
-                  <th>Draft Action</th>
-                </tr>
-              </thead>
-              <tbody>
+          <>
+            {/* Desktop Full Table View (>= 820px) */}
+            <div className="desktop-table-view">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th className="th-rank">#</th>
+                      <th>MANAGER / FRANCHISE</th>
+                      <th>RECORD</th>
+                      <th>SCOUTING ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((u, idx) => {
+                      const roster = rosterMap.get(u.user_id);
+                      const isSelected = u.user_id === selectedOpponent?.user_id;
+
+                      return (
+                        <tr key={u.user_id} className={isSelected ? 'selected-row' : ''}>
+                          <td className="th-rank" style={{ fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
+                            {idx + 1}
+                          </td>
+                          <td>
+                            <div className="team-cell">
+                              <img
+                                src={getAvatarUrl(u.avatar)}
+                                alt={u.display_name}
+                                className="team-avatar"
+                                loading="lazy"
+                              />
+                              <div className="team-meta">
+                                <span className="team-title">{u.display_name}</span>
+                                <span className="team-sub">
+                                  @{u.username || 'user'} · {u.metadata?.team_name || 'Team'}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ fontFamily: 'var(--mono)', color: 'var(--ink-secondary)' }}>
+                            {roster ? `${roster.settings.wins}–${roster.settings.losses}` : '—'}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleScoutOpponent(u);
+                                setActiveTab('dossier');
+                              }}
+                              className={`action-btn ${isSelected ? 'active' : ''}`}
+                            >
+                              {isScoutingOpponent && isSelected ? (
+                                <>
+                                  <Loader2 size={12} className="spin" />
+                                  <span>Analyzing…</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Target size={12} />
+                                  <span>{isSelected ? 'View Dossier' : 'Scout Opponent'}</span>
+                                </>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile Adaptive Cards View (<= 820px, NO HORIZONTAL SCROLLING) */}
+            <div className="mobile-cards-view">
+              <div className="m-standings-card-list">
                 {filteredUsers.map((u, idx) => {
                   const roster = rosterMap.get(u.user_id);
                   const isSelected = u.user_id === selectedOpponent?.user_id;
 
                   return (
-                    <tr key={u.user_id} className={isSelected ? 'selected-row' : ''}>
-                      <td className="th-rank" style={{ fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
-                        {idx + 1}
-                      </td>
-                      <td>
-                        <div className="team-cell">
+                    <div key={u.user_id} className="m-standings-card">
+                      <div className="m-card-header">
+                        <div className="m-card-identity">
+                          <span className="m-card-rank">#{idx + 1}</span>
                           <img
                             src={getAvatarUrl(u.avatar)}
                             alt={u.display_name}
                             className="team-avatar"
+                            loading="lazy"
                           />
                           <div className="team-meta">
                             <span className="team-title">{u.display_name}</span>
-                            <span className="team-sub">
-                              @{u.username || 'user'} · {u.metadata?.team_name || 'Team'}
-                            </span>
+                            <span className="team-sub">@{u.username || 'user'}</span>
                           </div>
                         </div>
-                      </td>
-                      <td style={{ fontFamily: 'var(--mono)', color: 'var(--ink-secondary)' }}>
-                        {roster ? `${roster.settings.wins}-${roster.settings.losses}` : '—'}
-                      </td>
-                      <td>
+
                         <button
+                          type="button"
                           onClick={() => {
                             handleScoutOpponent(u);
                             setActiveTab('dossier');
                           }}
                           className={`action-btn ${isSelected ? 'active' : ''}`}
                         >
-                          {isScoutingOpponent && isSelected ? (
-                            <>
-                              <Loader2 className="w-3 h-3 animate-spin" />
-                              <span>Scouting...</span>
-                            </>
-                          ) : (
-                            <>
-                              <Target className="w-3 h-3" />
-                              <span>{isSelected ? 'View Dossier' : 'Scout Opponent'}</span>
-                            </>
-                          )}
+                          <Target size={12} />
+                          <span>Scout</span>
                         </button>
-                      </td>
-                    </tr>
+                      </div>
+
+                      <div className="m-card-metrics-grid">
+                        <div className="m-metric-cell">
+                          <span className="m-metric-label">RECORD</span>
+                          <span className="m-metric-val">
+                            {roster ? `${roster.settings.wins}–${roster.settings.losses}` : '—'}
+                          </span>
+                        </div>
+                        <div className="m-metric-cell">
+                          <span className="m-metric-label">TEAM</span>
+                          <span className="m-metric-val">{u.metadata?.team_name || 'Team'}</span>
+                        </div>
+                        <div className="m-metric-cell">
+                          <span className="m-metric-label">STATUS</span>
+                          <span className="m-metric-val">{isSelected ? 'Active Target' : 'Ready'}</span>
+                        </div>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          </>
         )}
 
         {/* TAB 2: DOSSIER VIEW */}
@@ -468,7 +551,7 @@ export function App() {
                 <div>
                   <div className="dossier-card-title">
                     <h3>
-                      <Target className="w-4 h-4 text-emerald-400" />
+                      <Target size={14} style={{ color: 'var(--lucky-text)' }} />
                       <span>Positional Allocation</span>
                     </h3>
                     <span>{scoutProfile.totalPicksAnalyzed} Picks</span>
@@ -509,7 +592,7 @@ export function App() {
 
                 <div className="tactical-box">
                   <div className="tactical-box-header">
-                    <Compass className="w-3.5 h-3.5" />
+                    <Compass size={13} />
                     <span>Tactical Exploitation Advice</span>
                   </div>
                   <ul>
@@ -525,7 +608,7 @@ export function App() {
                 <div>
                   <div className="dossier-card-title">
                     <h3>
-                      <Sparkles className="w-4 h-4 text-amber-400" />
+                      <Sparkles size={14} style={{ color: '#fbbf24' }} />
                       <span>Rounds 1–3 Tendencies</span>
                     </h3>
                     <span>Early Capital</span>
@@ -572,7 +655,7 @@ export function App() {
                 {/* Team bias */}
                 <div style={{ marginTop: '16px', borderTop: '1px solid var(--line)', paddingTop: '14px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
-                    <ShieldAlert className="w-3.5 h-3.5 text-cyan-400" />
+                    <ShieldAlert size={13} style={{ color: 'var(--accent-text)' }} />
                     <span style={{ font: '600 12px var(--display)', color: 'var(--ink)' }}>Favorite NFL Franchises:</span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -601,47 +684,98 @@ export function App() {
 
         {/* TAB 3: COMPLETE PICK LOG */}
         {activeTab === 'picks' && scoutProfile && (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th className="th-rank">Round / Pick</th>
-                  <th>Player</th>
-                  <th>Position</th>
-                  <th>Team</th>
-                  <th>Draft / League</th>
-                  <th style={{ textAlign: 'right' }}>Season</th>
-                </tr>
-              </thead>
-              <tbody>
-                {scoutProfile.draftHistory.map((pick, pIdx) => {
+          <>
+            {/* Desktop Table View */}
+            <div className="desktop-table-view">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th className="th-rank">Round / Pick</th>
+                      <th>Player</th>
+                      <th>Position</th>
+                      <th>Team</th>
+                      <th>Draft / League</th>
+                      <th style={{ textAlign: 'right' }}>Season</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scoutProfile.draftHistory.map((pick, pIdx) => {
+                      const fullName = `${pick.metadata?.first_name || ''} ${pick.metadata?.last_name || ''}`.trim() || 'Unknown';
+                      const pos = (pick.metadata?.position || 'FLEX').toUpperCase();
+
+                      return (
+                        <tr key={`${pick.draft_id}-${pick.pick_no}-${pIdx}`}>
+                          <td className="th-rank" style={{ fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
+                            R{pick.round} (#{pick.pick_no})
+                          </td>
+                          <td style={{ fontWeight: 600, color: 'var(--ink)' }}>
+                            {fullName}
+                            {pick.is_keeper && (
+                              <span
+                                style={{
+                                  marginLeft: '6px',
+                                  padding: '1px 5px',
+                                  borderRadius: '3px',
+                                  background: 'var(--accent-soft)',
+                                  color: 'var(--accent-text)',
+                                  fontSize: '9px',
+                                  fontFamily: 'var(--mono)',
+                                }}
+                              >
+                                KEEPER
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <span
+                              style={{
+                                padding: '2px 7px',
+                                borderRadius: '4px',
+                                fontFamily: 'var(--mono)',
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                background: 'var(--surface-raised)',
+                                border: '1px solid var(--line)',
+                                color: pos === 'RB' ? '#60a5fa' : pos === 'WR' ? '#34d399' : pos === 'QB' ? '#fbbf24' : '#f97316',
+                              }}
+                            >
+                              {pos}
+                            </span>
+                          </td>
+                          <td style={{ fontFamily: 'var(--mono)', color: 'var(--ink-secondary)' }}>
+                            {pick.metadata?.team || 'FA'}
+                          </td>
+                          <td style={{ color: 'var(--muted)' }}>
+                            {pick.draftName || 'Draft'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
+                            {pick.season || selectedSeason}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Mobile Cards View (NO HORIZONTAL SCROLL) */}
+            <div className="mobile-cards-view">
+              <div className="m-standings-card-list">
+                {scoutProfile.draftHistory.slice(0, 30).map((pick, pIdx) => {
                   const fullName = `${pick.metadata?.first_name || ''} ${pick.metadata?.last_name || ''}`.trim() || 'Unknown';
                   const pos = (pick.metadata?.position || 'FLEX').toUpperCase();
 
                   return (
-                    <tr key={`${pick.draft_id}-${pick.pick_no}-${pIdx}`}>
-                      <td className="th-rank" style={{ fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
-                        R{pick.round} (#{pick.pick_no})
-                      </td>
-                      <td style={{ fontWeight: 600, color: 'var(--ink)' }}>
-                        {fullName}
-                        {pick.is_keeper && (
-                          <span
-                            style={{
-                              marginLeft: '6px',
-                              padding: '1px 5px',
-                              borderRadius: '3px',
-                              background: 'var(--accent-soft)',
-                              color: 'var(--accent-text)',
-                              fontSize: '9px',
-                              fontFamily: 'var(--mono)',
-                            }}
-                          >
-                            KEEPER
+                    <div key={`${pick.draft_id}-${pick.pick_no}-${pIdx}`} className="m-standings-card">
+                      <div className="m-card-header">
+                        <div>
+                          <span style={{ font: '700 13px var(--mono)', color: 'var(--accent-text)', marginRight: '8px' }}>
+                            R{pick.round}.{pick.pick_no}
                           </span>
-                        )}
-                      </td>
-                      <td>
+                          <strong style={{ font: '600 13px var(--display)', color: 'var(--ink)' }}>{fullName}</strong>
+                        </div>
                         <span
                           style={{
                             padding: '2px 7px',
@@ -656,22 +790,30 @@ export function App() {
                         >
                           {pos}
                         </span>
-                      </td>
-                      <td style={{ fontFamily: 'var(--mono)', color: 'var(--ink-secondary)' }}>
-                        {pick.metadata?.team || 'FA'}
-                      </td>
-                      <td style={{ color: 'var(--muted)' }}>
-                        {pick.draftName || 'Draft'}
-                      </td>
-                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
-                        {pick.season || selectedSeason}
-                      </td>
-                    </tr>
+                      </div>
+
+                      <div className="m-card-metrics-grid">
+                        <div className="m-metric-cell">
+                          <span className="m-metric-label">TEAM</span>
+                          <span className="m-metric-val">{pick.metadata?.team || 'FA'}</span>
+                        </div>
+                        <div className="m-metric-cell">
+                          <span className="m-metric-label">SEASON</span>
+                          <span className="m-metric-val">{pick.season || selectedSeason}</span>
+                        </div>
+                        <div className="m-metric-cell">
+                          <span className="m-metric-label">DRAFT</span>
+                          <span className="m-metric-val" title={pick.draftName || 'Draft'}>
+                            {pick.draftName ? pick.draftName.slice(0, 10) : 'Draft'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
+              </div>
+            </div>
+          </>
         )}
       </section>
 
@@ -684,7 +826,7 @@ export function App() {
           onClose={() => setIsDraftBoardModalOpen(false)}
         />
       )}
-    </div>
+    </main>
   );
 }
 

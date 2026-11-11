@@ -10,13 +10,13 @@ interface DraftBoardModalProps {
   onClose: () => void;
 }
 
-const POS_COLORS: Record<string, string> = {
-  RB: 'bg-blue-600/30 border-blue-500/50 text-blue-200',
-  WR: 'bg-emerald-600/30 border-emerald-500/50 text-emerald-200',
-  QB: 'bg-amber-600/30 border-amber-500/50 text-amber-200',
-  TE: 'bg-orange-600/30 border-orange-500/50 text-orange-200',
-  K: 'bg-purple-600/30 border-purple-500/50 text-purple-200',
-  DEF: 'bg-pink-600/30 border-pink-500/50 text-pink-200',
+const POS_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+  RB: { bg: 'rgba(96, 165, 250, 0.12)', text: '#93c5fd', border: 'rgba(96, 165, 250, 0.3)' },
+  WR: { bg: 'rgba(16, 185, 129, 0.12)', text: '#34d399', border: 'rgba(16, 185, 129, 0.3)' },
+  QB: { bg: 'rgba(245, 158, 11, 0.12)', text: '#fbbf24', border: 'rgba(245, 158, 11, 0.3)' },
+  TE: { bg: 'rgba(249, 115, 22, 0.12)', text: '#fb923c', border: 'rgba(249, 115, 22, 0.3)' },
+  K: { bg: 'rgba(168, 85, 247, 0.12)', text: '#c084fc', border: 'rgba(168, 85, 247, 0.3)' },
+  DEF: { bg: 'rgba(236, 72, 153, 0.12)', text: '#f472b6', border: 'rgba(236, 72, 153, 0.3)' },
 };
 
 export const DraftBoardModal: React.FC<DraftBoardModalProps> = ({
@@ -43,120 +43,212 @@ export const DraftBoardModal: React.FC<DraftBoardModalProps> = ({
     fetchPicks();
   }, [league.draft_id]);
 
-  // Group picks into round and draft slot
   const totalRounds = league.settings.draft_rounds || Math.max(...picks.map((p) => p.round), 14);
   const totalSlots = league.total_rosters || 12;
 
-  // Map picks by round and slot
   const pickGrid = new Map<string, SleeperDraftPick>();
   for (const p of picks) {
     pickGrid.set(`${p.round}-${p.draft_slot}`, p);
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-fadeIn">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-7xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
-          <div className="flex items-center space-x-2">
-            <LayoutGrid className="w-5 h-5 text-emerald-400" />
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 50,
+        background: 'rgba(10, 11, 13, 0.85)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '16px',
+        boxSizing: 'border-box',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--line)',
+          borderRadius: '10px',
+          width: '100%',
+          maxWidth: '1200px',
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Modal Header */}
+        <div
+          style={{
+            padding: '16px 20px',
+            borderBottom: '1px solid var(--line)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: 'var(--surface-raised)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <LayoutGrid size={16} style={{ color: 'var(--accent-text)' }} />
             <div>
-              <h2 className="text-base font-bold text-white">
-                {league.name} - Full Draft Board Grid
-              </h2>
-              <p className="text-xs text-slate-400">
-                {picks.length} picks logged • {totalRounds} Rounds • {totalSlots} Teams
+              <h3 style={{ margin: 0, font: '600 15px var(--display)', color: 'var(--ink)' }}>
+                {league.name} · Draft Board Grid
+              </h3>
+              <p style={{ margin: '2px 0 0', font: '11px var(--mono)', color: 'var(--muted)' }}>
+                {picks.length} picks · {totalRounds} Rounds · {totalSlots} Teams
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            style={{
+              padding: '6px',
+              borderRadius: '6px',
+              background: 'var(--control)',
+              border: '1px solid var(--line)',
+              color: 'var(--ink)',
+              cursor: 'pointer',
+              display: 'grid',
+              placeItems: 'center',
+            }}
           >
-            <X className="w-5 h-5" />
+            <X size={15} />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-4">
+        {/* Modal Grid Content */}
+        <div style={{ flex: 1, overflow: 'auto', padding: '16px' }}>
           {isLoading ? (
-            <div className="py-20 flex flex-col items-center justify-center text-slate-400">
-              <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
-              <p className="text-sm">Retrieving full draft board matrix...</p>
+            <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--muted)', font: '12px var(--mono)' }}>
+              <Loader2 size={20} className="spin" style={{ margin: '0 auto 8px', display: 'block' }} />
+              <span>Loading complete draft matrix…</span>
             </div>
           ) : (
-            <div className="min-w-[900px]">
-              {/* Draft Slot Headers */}
+            <div style={{ width: '100%', overflowX: 'auto' }}>
               <div
-                className="grid gap-2 mb-2 sticky top-0 bg-slate-900 z-10 py-1"
-                style={{ gridTemplateColumns: `50px repeat(${totalSlots}, minmax(110px, 1fr))` }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: `44px repeat(${totalSlots}, minmax(105px, 1fr))`,
+                  gap: '6px',
+                  marginBottom: '6px',
+                  minWidth: `${totalSlots * 115}px`,
+                }}
               >
-                <div className="text-[11px] font-bold text-slate-500 flex items-center justify-center">
+                <div style={{ font: '700 10px var(--mono)', color: 'var(--muted)', textAlign: 'center', padding: '6px 0' }}>
                   RND
                 </div>
                 {Array.from({ length: totalSlots }).map((_, idx) => (
                   <div
                     key={idx}
-                    className="p-1.5 rounded bg-slate-950 border border-slate-800 text-center font-mono text-[11px] text-slate-400 font-bold"
+                    style={{
+                      padding: '6px 4px',
+                      background: 'var(--surface-raised)',
+                      border: '1px solid var(--line)',
+                      borderRadius: '5px',
+                      font: '700 10px var(--mono)',
+                      color: 'var(--muted)',
+                      textAlign: 'center',
+                    }}
                   >
                     SLOT {idx + 1}
                   </div>
                 ))}
               </div>
 
-              {/* Rounds Rows */}
-              <div className="space-y-2">
+              {/* Rows */}
+              <div style={{ minWidth: `${totalSlots * 115}px`, display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 {Array.from({ length: totalRounds }).map((_, rIdx) => {
                   const roundNum = rIdx + 1;
                   return (
                     <div
                       key={roundNum}
-                      className="grid gap-2"
-                      style={{ gridTemplateColumns: `50px repeat(${totalSlots}, minmax(110px, 1fr))` }}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: `44px repeat(${totalSlots}, minmax(105px, 1fr))`,
+                        gap: '6px',
+                      }}
                     >
-                      {/* Round indicator */}
-                      <div className="flex items-center justify-center font-mono font-bold text-xs text-slate-500 bg-slate-950/60 rounded border border-slate-800">
+                      <div
+                        style={{
+                          background: 'var(--surface-raised)',
+                          border: '1px solid var(--line)',
+                          borderRadius: '5px',
+                          display: 'grid',
+                          placeItems: 'center',
+                          font: '700 11px var(--mono)',
+                          color: 'var(--muted)',
+                        }}
+                      >
                         R{roundNum}
                       </div>
 
-                      {/* Pick Slots */}
                       {Array.from({ length: totalSlots }).map((_, sIdx) => {
                         const slotNum = sIdx + 1;
                         const pick = pickGrid.get(`${roundNum}-${slotNum}`);
                         const pos = (pick?.metadata?.position || 'FLEX').toUpperCase();
                         const isTarget = pick && pick.picked_by === highlightUserId;
+                        const style = POS_COLORS[pos] || {
+                          bg: 'var(--surface-raised)',
+                          text: 'var(--ink-secondary)',
+                          border: 'var(--line)',
+                        };
 
                         if (!pick) {
                           return (
                             <div
                               key={slotNum}
-                              className="h-16 rounded border border-dashed border-slate-800 bg-slate-950/20"
+                              style={{
+                                height: '56px',
+                                border: '1px dashed var(--line)',
+                                borderRadius: '6px',
+                                background: 'transparent',
+                              }}
                             />
                           );
                         }
 
-                        const posStyle = POS_COLORS[pos] || 'bg-slate-800/40 border-slate-700 text-slate-300';
-
                         return (
                           <div
                             key={slotNum}
-                            className={`h-16 p-1.5 rounded-lg border text-left flex flex-col justify-between transition-all ${posStyle} ${
-                              isTarget
-                                ? 'ring-2 ring-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
-                                : ''
-                            }`}
+                            style={{
+                              height: '56px',
+                              padding: '6px 8px',
+                              borderRadius: '6px',
+                              border: isTarget ? '2px solid var(--accent)' : `1px solid ${style.border}`,
+                              background: isTarget ? 'var(--accent-soft)' : style.bg,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              boxShadow: isTarget ? '0 0 10px rgba(96, 165, 250, 0.3)' : 'none',
+                              boxSizing: 'border-box',
+                            }}
                           >
-                            <div className="flex items-start justify-between">
-                              <span className="font-bold text-[11px] truncate leading-tight">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <span
+                                style={{
+                                  font: '600 11px var(--display)',
+                                  color: 'var(--ink)',
+                                  whiteSpace: 'nowrap',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  maxWidth: '75px',
+                                }}
+                              >
                                 {pick.metadata?.first_name?.[0]}. {pick.metadata?.last_name}
                               </span>
-                              <span className="text-[9px] font-mono opacity-80 shrink-0 ml-1">
+                              <span style={{ font: '9px var(--mono)', color: 'var(--muted)' }}>
                                 #{pick.pick_no}
                               </span>
                             </div>
-                            <div className="flex items-center justify-between text-[10px] font-mono font-semibold">
-                              <span>{pick.metadata?.team || 'FA'}</span>
-                              <span className="px-1 rounded bg-black/30">{pos}</span>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', font: '10px var(--mono)' }}>
+                              <span style={{ color: 'var(--muted)' }}>{pick.metadata?.team || 'FA'}</span>
+                              <span style={{ color: style.text, fontWeight: 700 }}>{pos}</span>
                             </div>
                           </div>
                         );
