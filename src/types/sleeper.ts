@@ -166,6 +166,19 @@ export interface ManagerOtherDraft {
   rounds: number;
 }
 
+export interface ManagerOtherLeagueDetail {
+  leagueId: string;
+  name: string;
+  season: string;
+  draftId: string;
+  isDynasty: boolean;
+  totalTeams: number;
+  scoringType: string;
+  teamName: string;
+  record?: { wins: number; losses: number };
+  rosterPlayerIds?: string[];
+}
+
 export interface ManagerScoutProfile {
   user: SleeperLeagueUser;
   totalDraftsAnalyzed: number;
