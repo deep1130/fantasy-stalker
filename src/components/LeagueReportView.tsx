@@ -1,5 +1,5 @@
 import React from 'react';
-import { Zap, Target } from 'lucide-react';
+import { Target, ExternalLink } from 'lucide-react';
 import { SleeperLeagueUser, ManagerScoutProfile } from '../types/sleeper';
 import { getAvatarUrl } from '../services/sleeperApi';
 
@@ -8,8 +8,7 @@ interface LeagueReportViewProps {
   leagueProfiles: Map<string, ManagerScoutProfile>;
   selectedOpponent: SleeperLeagueUser | null;
   isAnalyzingLeague: boolean;
-  onAnalyzeLeague: () => void;
-  onScoutOpponent: (user: SleeperLeagueUser) => void;
+  onSelectOpponent: (user: SleeperLeagueUser, tab?: 'dossier' | 'activity') => void;
 }
 
 export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
@@ -17,47 +16,10 @@ export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
   leagueProfiles,
   selectedOpponent,
   isAnalyzingLeague,
-  onAnalyzeLeague,
-  onScoutOpponent,
+  onSelectOpponent,
 }) => {
   return (
     <>
-      {leagueProfiles.size === 0 && !isAnalyzingLeague && (
-        <div
-          style={{
-            marginBottom: '16px',
-            padding: '16px 20px',
-            background: 'var(--surface)',
-            border: '1px solid var(--line)',
-            borderRadius: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '16px',
-            flexWrap: 'wrap',
-          }}
-        >
-          <div>
-            <strong style={{ font: '600 14px var(--display)', color: 'var(--ink)' }}>
-              Ready to scout all {filteredUsers.length} league mates across all their drafts?
-            </strong>
-            <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
-              Click &quot;Analyze League Mates&quot; to uncover reach frequencies against ADP, positional timing, and draft archetypes for every manager.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onAnalyzeLeague}
-            disabled={isAnalyzingLeague || filteredUsers.length === 0}
-            className="action-btn active"
-            style={{ padding: '8px 16px', fontWeight: 700 }}
-          >
-            <Zap size={13} />
-            <span>Analyze League Mates</span>
-          </button>
-        </div>
-      )}
-
       {/* Desktop Table View */}
       <div className="desktop-table-view">
         <div className="table-wrap">
@@ -72,7 +34,7 @@ export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
                 <th>AVG TE1</th>
                 <th>REACH VS ADP</th>
                 <th>BIGGEST REACH</th>
-                <th>ACTION</th>
+                <th style={{ textAlign: 'right' }}>ACTIONS</th>
               </tr>
             </thead>
             <tbody>
@@ -85,7 +47,12 @@ export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
                 const topReach = profile?.reachStats.topReaches[0];
 
                 return (
-                  <tr key={u.user_id} className={isSelected ? 'selected-row' : ''}>
+                  <tr
+                    key={u.user_id}
+                    className={isSelected ? 'selected-row' : ''}
+                    onClick={() => onSelectOpponent(u)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td className="th-rank" style={{ fontFamily: 'var(--mono)', color: 'var(--muted)' }}>
                       {idx + 1}
                     </td>
@@ -110,7 +77,7 @@ export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
                         <span className="kpi-luck-badge accent">{profile.dnaBadges[0].title}</span>
                       ) : (
                         <span style={{ color: 'var(--muted)', fontSize: '11px', fontFamily: 'var(--mono)' }}>
-                          {isAnalyzingLeague ? 'Analyzing…' : 'Balanced'}
+                          {isAnalyzingLeague ? 'Analyzing…' : 'Pending Scout'}
                         </span>
                       )}
                     </td>
@@ -141,15 +108,33 @@ export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
                         '—'
                       )}
                     </td>
-                    <td>
-                      <button
-                        type="button"
-                        onClick={() => onScoutOpponent(u)}
-                        className={`action-btn ${isSelected ? 'active' : ''}`}
-                      >
-                        <Target size={12} />
-                        <span>{isSelected ? 'View Dossier' : 'Scout'}</span>
-                      </button>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectOpponent(u, 'dossier');
+                          }}
+                          className={`action-btn ${isSelected ? 'active' : ''}`}
+                          title="View Draft DNA Dossier"
+                        >
+                          <Target size={12} />
+                          <span>Dossier</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectOpponent(u, 'activity');
+                          }}
+                          className="action-btn"
+                          title="Inspect their draft boards, teams, trades in other leagues"
+                        >
+                          <ExternalLink size={12} />
+                          <span>Other Leagues</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -167,7 +152,12 @@ export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
             const isSelected = u.user_id === selectedOpponent?.user_id;
 
             return (
-              <div key={u.user_id} className="m-standings-card">
+              <div
+                key={u.user_id}
+                className="m-standings-card"
+                onClick={() => onSelectOpponent(u)}
+                style={{ cursor: 'pointer', borderColor: isSelected ? 'var(--accent-border)' : 'var(--line)' }}
+              >
                 <div className="m-card-header">
                   <div className="m-card-identity">
                     <span className="m-card-rank">#{idx + 1}</span>
@@ -179,24 +169,40 @@ export const LeagueReportView: React.FC<LeagueReportViewProps> = ({
                     />
                     <div className="team-meta">
                       <span className="team-title">{u.display_name}</span>
-                      <span className="team-sub">@{u.username || 'user'}</span>
+                      <span className="team-sub">@{u.username || 'user'} · {u.metadata?.team_name || 'Team'}</span>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onScoutOpponent(u)}
-                    className={`action-btn ${isSelected ? 'active' : ''}`}
-                  >
-                    <Target size={12} />
-                    <span>Dossier</span>
-                  </button>
+                  <div style={{ display: 'flex', gap: '5px' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectOpponent(u, 'dossier');
+                      }}
+                      className="action-btn"
+                    >
+                      <Target size={11} />
+                      <span>DNA</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectOpponent(u, 'activity');
+                      }}
+                      className="action-btn active"
+                    >
+                      <ExternalLink size={11} />
+                      <span>Stalk</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="m-card-metrics-grid">
                   <div className="m-metric-cell">
                     <span className="m-metric-label">DNA</span>
-                    <span className="m-metric-val">{profile?.dnaBadges[0]?.title || 'Balanced'}</span>
+                    <span className="m-metric-val">{profile?.dnaBadges[0]?.title || 'Pending'}</span>
                   </div>
                   <div className="m-metric-cell">
                     <span className="m-metric-label">QB1 / RB1</span>

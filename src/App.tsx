@@ -9,6 +9,8 @@ import {
   Loader2,
   RefreshCw,
   Zap,
+  Crosshair,
+  ExternalLink,
 } from 'lucide-react';
 import {
   SleeperUser,
@@ -84,7 +86,6 @@ export function App() {
         ];
         const unique = Array.from(new Set(dynamicSeasons));
         setAvailableSeasons(unique);
-        // Default to 2024 where Sunday Funday and completed leagues reside
         setSelectedSeason('2024');
         await handleSearch('deep93', '2024', unique);
       } catch {
@@ -144,7 +145,6 @@ export function App() {
       const users = await getLeagueUsers(league.league_id);
       setLeagueUsers(users);
 
-      // Select target opponent
       const target = users.find((u) => u.user_id !== (currentUserId || currentUser?.user_id)) || users[0];
       if (target) {
         setSelectedOpponent(target);
@@ -176,7 +176,7 @@ export function App() {
         })
       );
 
-      // 2. Fetch picks for the drafts & build a global consensus ADP map
+      // 2. Fetch picks for drafts & build consensus ADP
       const draftPicksCache = new Map<string, SleeperDraftPick[]>();
       const allDraftIds = new Set<string>();
       for (const drafts of userDraftsMap.values()) {
@@ -196,7 +196,6 @@ export function App() {
         })
       );
 
-      // Calculate global consensus ADP
       const playerPicksSum = new Map<string, { total: number; count: number }>();
       for (const picks of draftPicksCache.values()) {
         for (const p of picks) {
@@ -226,7 +225,6 @@ export function App() {
 
       setLeagueProfiles(profiles);
 
-      // Also set the single selected opponent dossier
       const firstTarget = users.find((u) => u.user_id !== currentUser?.user_id) || users[0];
       if (firstTarget && profiles.has(firstTarget.user_id)) {
         setScoutProfile(profiles.get(firstTarget.user_id)!);
@@ -238,8 +236,12 @@ export function App() {
     }
   };
 
-  const handleScoutOpponent = async (targetUser: SleeperLeagueUser) => {
+  const handleScoutOpponent = async (targetUser: SleeperLeagueUser, preferredTab?: 'dossier' | 'activity') => {
     setSelectedOpponent(targetUser);
+    if (preferredTab) {
+      setActiveTab(preferredTab);
+    }
+
     const existing = leagueProfiles.get(targetUser.user_id);
     if (existing) {
       setScoutProfile(existing);
@@ -289,14 +291,16 @@ export function App() {
       {/* TOPBAR */}
       <header className="topbar">
         <a href="./" className="brand" title="Fantasy Stalker">
-          <span className="brand-mark">FS</span>
+          <span className="brand-mark">
+            <Crosshair size={15} />
+          </span>
           <span>
             FANTASY<span className="brand-light">STALKER</span>
           </span>
         </a>
 
         <div className="topbar-right">
-          <span className="season-label">NFL {selectedSeason}</span>
+          <span className="season-label">NFL &apos;{selectedSeason.slice(-2)}</span>
           <span className="live-dot" />
           <span className="live-label">LIVE DATA</span>
         </div>
@@ -306,11 +310,12 @@ export function App() {
       <section className="intro">
         <div>
           <p className="eyebrow">
-            LEAGUE-WIDE DRAFT SCOUT <span>·</span>{' '}
+            CROSS-LEAGUE DRAFT SCOUT <span>·</span>{' '}
             {selectedLeague ? selectedLeague.name.toUpperCase() : 'SCOUTING REPORT'}
           </p>
           <h1>
-            Who did they draft? <em>How do they draft?</em>
+            Who did they draft?<br />
+            <em>How do they draft?</em>
           </h1>
           <p className="intro-copy">
             Analyze every manager in your league across all their Sleeper leagues. Uncover reach frequency against
@@ -352,7 +357,7 @@ export function App() {
               className="refresh-button"
             >
               <RefreshCw size={13} className={isLoadingUser ? 'spin' : ''} />
-              <span>{isLoadingUser ? 'Loading…' : 'Scan'}</span>
+              <span>{isLoadingUser ? 'Wait…' : 'Scan'}</span>
             </button>
           </div>
           <div className="refresh-meta">
@@ -385,6 +390,30 @@ export function App() {
         </div>
       )}
 
+      {/* LEAGUE SELECTOR BAR */}
+      {leagues.length > 0 && (
+        <div className="league-nav-strip">
+          <span className="league-nav-label">YOUR LEAGUES:</span>
+          <div className="league-pill-group">
+            {leagues.map((l) => {
+              const isDyn = l.settings?.type === 2;
+              const isSel = l.league_id === selectedLeague?.league_id;
+              return (
+                <button
+                  key={l.league_id}
+                  type="button"
+                  onClick={() => handleSelectLeague(l)}
+                  className={`league-pill ${isSel ? 'active' : ''}`}
+                >
+                  <span>{l.name}</span>
+                  <span className="pill-type-tag">({isDyn ? 'Dynasty' : 'Redraft'})</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* SUMMARY STRIP (4 KPIS) */}
       <SummaryStrip
         selectedLeague={selectedLeague}
@@ -396,65 +425,6 @@ export function App() {
         scoutProfile={scoutProfile}
       />
 
-      {/* LEAGUE SELECTOR PILLS */}
-      {leagues.length > 0 && (
-        <div style={{ marginBottom: '20px', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: '11px', fontFamily: 'var(--mono)', color: 'var(--muted)' }}>SELECT LEAGUE:</span>
-          {leagues.map((l) => {
-            const isDyn = l.settings?.type === 2;
-            const isSel = l.league_id === selectedLeague?.league_id;
-            return (
-              <button
-                key={l.league_id}
-                type="button"
-                onClick={() => handleSelectLeague(l)}
-                className={`action-btn ${isSel ? 'active' : ''}`}
-              >
-                <span>{l.name}</span>
-                <span style={{ fontSize: '9px', opacity: 0.8 }}>({isDyn ? 'Dynasty' : 'Redraft'})</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* FORMAT FILTER STRIP (REDRAFT VS DYNASTY) */}
-      <div style={{ marginBottom: '20px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-        <span style={{ fontSize: '11px', fontFamily: 'var(--mono)', color: 'var(--muted)' }}>EVALUATION SCOPE:</span>
-        <div className="view-tabs">
-          <button
-            type="button"
-            className={formatFilter === 'all' ? 'selected' : ''}
-            onClick={() => {
-              setFormatFilter('all');
-              if (selectedOpponent) handleScoutOpponent(selectedOpponent);
-            }}
-          >
-            All Formats
-          </button>
-          <button
-            type="button"
-            className={formatFilter === 'redraft' ? 'selected' : ''}
-            onClick={() => {
-              setFormatFilter('redraft');
-              if (selectedOpponent) handleScoutOpponent(selectedOpponent);
-            }}
-          >
-            Redraft Only
-          </button>
-          <button
-            type="button"
-            className={formatFilter === 'dynasty' ? 'selected' : ''}
-            onClick={() => {
-              setFormatFilter('dynasty');
-              if (selectedOpponent) handleScoutOpponent(selectedOpponent);
-            }}
-          >
-            Dynasty Only
-          </button>
-        </div>
-      </div>
-
       {/* MAIN BOARD SECTION */}
       <section>
         <div className="section-heading">
@@ -462,12 +432,14 @@ export function App() {
             <p className="eyebrow">
               {activeTab === 'league_report' && 'LEAGUE SCOUTING INTEL BOARD'}
               {activeTab === 'dossier' && 'MANAGER SCOUTING DOSSIER'}
+              {activeTab === 'activity' && 'CROSS-LEAGUE SLEEPER STALKER'}
               {activeTab === 'picks' && 'HISTORICAL PICK LOG'}
               <span>·</span> {selectedLeague ? `${selectedLeague.total_rosters} TEAMS` : 'SCOUTING'}
             </p>
             <h2>
               {activeTab === 'league_report' && `${selectedLeague?.name || 'League'} · Complete Scouting Report`}
               {activeTab === 'dossier' && `Deep Dossier: ${selectedOpponent?.display_name || ''}`}
+              {activeTab === 'activity' && `Cross-League Intel: ${selectedOpponent?.display_name || ''}`}
               {activeTab === 'picks' && `Historical Picks: ${selectedOpponent?.display_name || ''}`}
             </h2>
           </div>
@@ -484,8 +456,42 @@ export function App() {
               <span>{isAnalyzingLeague ? 'Analyzing…' : 'Analyze League Mates'}</span>
             </button>
 
+            {/* Scope Filter Segment */}
+            <div className="view-tabs" title="Evaluation Scope">
+              <button
+                type="button"
+                className={formatFilter === 'all' ? 'selected' : ''}
+                onClick={() => {
+                  setFormatFilter('all');
+                  if (selectedOpponent) handleScoutOpponent(selectedOpponent);
+                }}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={formatFilter === 'redraft' ? 'selected' : ''}
+                onClick={() => {
+                  setFormatFilter('redraft');
+                  if (selectedOpponent) handleScoutOpponent(selectedOpponent);
+                }}
+              >
+                Redraft
+              </button>
+              <button
+                type="button"
+                className={formatFilter === 'dynasty' ? 'selected' : ''}
+                onClick={() => {
+                  setFormatFilter('dynasty');
+                  if (selectedOpponent) handleScoutOpponent(selectedOpponent);
+                }}
+              >
+                Dynasty
+              </button>
+            </div>
+
             <div className="search-box">
-              <Search size={14} />
+              <Search size={13} />
               <input
                 type="text"
                 value={searchFilter}
@@ -494,6 +500,7 @@ export function App() {
               />
             </div>
 
+            {/* Primary Navigation Tabs */}
             <div className="view-tabs">
               <button
                 type="button"
@@ -501,15 +508,15 @@ export function App() {
                 className={activeTab === 'league_report' ? 'selected' : ''}
               >
                 <Users size={12} />
-                <span>League Report</span>
+                <span>League Mates</span>
               </button>
               <button
                 type="button"
                 onClick={() => setActiveTab('activity')}
                 className={activeTab === 'activity' ? 'selected' : ''}
               >
-                <LayoutGrid size={12} />
-                <span>Their Other Leagues &amp; Draft Boards</span>
+                <ExternalLink size={12} />
+                <span>Other Leagues &amp; Boards</span>
               </button>
               <button
                 type="button"
@@ -517,7 +524,7 @@ export function App() {
                 className={activeTab === 'dossier' ? 'selected' : ''}
               >
                 <Target size={12} />
-                <span>Draft DNA Dossier</span>
+                <span>Draft DNA</span>
               </button>
               <button
                 type="button"
@@ -553,11 +560,7 @@ export function App() {
             leagueProfiles={leagueProfiles}
             selectedOpponent={selectedOpponent}
             isAnalyzingLeague={isAnalyzingLeague}
-            onAnalyzeLeague={() => analyzeEntireLeague(leagueUsers)}
-            onScoutOpponent={(u) => {
-              handleScoutOpponent(u);
-              setActiveTab('dossier');
-            }}
+            onSelectOpponent={(u, tab) => handleScoutOpponent(u, tab)}
           />
         )}
 
@@ -572,6 +575,8 @@ export function App() {
                 targetUser={selectedOpponent}
                 currentLeagueId={selectedLeague?.league_id || ''}
                 availableSeasons={availableSeasons}
+                leagueUsers={leagueUsers}
+                onSelectTargetUser={(u) => handleScoutOpponent(u, 'activity')}
                 onOpenDraftBoard={(draftId, title, teams, rounds) =>
                   setModalDraftData({ draftId, title, teams, rounds })
                 }
