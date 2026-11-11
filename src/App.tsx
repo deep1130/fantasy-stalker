@@ -142,9 +142,6 @@ export function App() {
       if (target) {
         setSelectedOpponent(target);
       }
-
-      // Trigger league-wide intelligence analysis across all league members!
-      analyzeEntireLeague(users);
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : 'Error loading league details');
     }
@@ -401,13 +398,17 @@ export function App() {
           <strong>
             {isAnalyzingLeague ? (
               <span style={{ color: 'var(--accent-text)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                <Loader2 size={14} className="spin" /> Scanning all members…
+                <Loader2 size={14} className="spin" /> Scouting {leagueUsers.length} Mates…
               </span>
-            ) : (
+            ) : leagueProfiles.size > 0 ? (
               `${leagueProfiles.size} Managers Profiled`
+            ) : (
+              <span className="summary-muted">Ready to Analyze</span>
             )}
           </strong>
-          <span className="summary-note">Scouted across all their past drafts</span>
+          <span className="summary-note">
+            {leagueProfiles.size > 0 ? 'Scouted across all their drafts' : 'Click "Analyze League Mates" below'}
+          </span>
         </div>
 
         <div className="summary-item">
@@ -515,6 +516,17 @@ export function App() {
           </div>
 
           <div className="board-tools">
+            <button
+              type="button"
+              onClick={() => analyzeEntireLeague(leagueUsers)}
+              disabled={isAnalyzingLeague || leagueUsers.length === 0}
+              className="action-btn active"
+              title="Scout all league members across their Sleeper drafts"
+            >
+              {isAnalyzingLeague ? <Loader2 size={12} className="spin" /> : <Zap size={12} />}
+              <span>{isAnalyzingLeague ? 'Analyzing…' : 'Analyze League Mates'}</span>
+            </button>
+
             <div className="search-box">
               <Search size={14} />
               <input
@@ -568,6 +580,42 @@ export function App() {
         {/* TAB 1: LEAGUE-WIDE REPORT (ALL MANAGERS SCOUTED) */}
         {activeTab === 'league_report' && (
           <>
+            {leagueProfiles.size === 0 && !isAnalyzingLeague && (
+              <div
+                style={{
+                  marginBottom: '16px',
+                  padding: '16px 20px',
+                  background: 'var(--surface)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '16px',
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <strong style={{ font: '600 14px var(--display)', color: 'var(--ink)' }}>
+                    Ready to scout all {leagueUsers.length} league mates across all their drafts?
+                  </strong>
+                  <p style={{ margin: '3px 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+                    Click "Analyze League Mates" to uncover reach frequencies against ADP, positional timing, and draft archetypes for every manager.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => analyzeEntireLeague(leagueUsers)}
+                  disabled={isAnalyzingLeague || leagueUsers.length === 0}
+                  className="action-btn active"
+                  style={{ padding: '8px 16px', fontWeight: 700 }}
+                >
+                  <Zap size={13} />
+                  <span>Analyze League Mates</span>
+                </button>
+              </div>
+            )}
+
             {/* Desktop Table View */}
             <div className="desktop-table-view">
               <div className="table-wrap">
