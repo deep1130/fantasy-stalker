@@ -16,7 +16,7 @@ export interface SleeperLeague {
   roster_positions: string[];
   scoring_settings: Record<string, number>;
   settings: {
-    type?: number;
+    type?: number; // 0 = redraft, 1 = keeper, 2 = dynasty
     draft_rounds?: number;
     best_ball?: number;
     playoff_teams?: number;
@@ -89,6 +89,7 @@ export interface SleeperDraft {
   settings: {
     teams: number;
     rounds: number;
+    player_type?: number; // 1 = rookies only (dynasty rookie draft)
     slots_qb?: number;
     slots_rb?: number;
     slots_wr?: number;
@@ -111,17 +112,47 @@ export interface PositionStat {
   color: string;
 }
 
+export interface PositionTiming {
+  qb1Round: number | null;
+  rb1Round: number | null;
+  rb2Round: number | null;
+  wr1Round: number | null;
+  wr2Round: number | null;
+  te1Round: number | null;
+}
+
+export interface ReachItem {
+  player: string;
+  position: string;
+  team: string;
+  pickNo: number;
+  adp: number;
+  diff: number; // positive = reached early, negative = value steal
+  round: number;
+  draftName?: string;
+}
+
 export interface ManagerScoutProfile {
   user: SleeperLeagueUser;
   totalDraftsAnalyzed: number;
   totalPicksAnalyzed: number;
+  redraftDraftsCount: number;
+  dynastyDraftsCount: number;
   threatLevel: 'TACTICAL MASTERMIND' | 'HIGH THREAT' | 'VALUE HUNTER' | 'WILDCARD' | 'CASUAL';
   threatColor: string;
   dnaBadges: { title: string; desc: string; icon: string }[];
   positionStats: PositionStat[];
-  earlyRoundPicks: { round: number; position: string; player: string; team: string }[];
+  positionTiming: PositionTiming;
+  reachStats: {
+    reachCount: number;
+    valueCount: number;
+    reachRatePct: number;
+    topReaches: ReachItem[];
+    topSteals: ReachItem[];
+  };
+  earlyRoundPicks: { round: number; position: string; player: string; team: string; isDynasty?: boolean }[];
   favoriteTeams: { team: string; count: number; percentage: number }[];
   repeatPlayers: { name: string; position: string; team: string; count: number }[];
   scoutingNotes: string[];
-  draftHistory: (SleeperDraftPick & { draftName?: string; season?: string })[];
+  draftHistory: (SleeperDraftPick & { draftName?: string; season?: string; isDynasty?: boolean; adp?: number })[];
 }

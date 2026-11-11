@@ -467,6 +467,52 @@ tbody tr.selected-row td {
   color: var(--accent-text);
 }
 
+/* FORMAT & REACH BADGES */
+.badge-dynasty {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  font: 600 10px var(--mono);
+  text-transform: uppercase;
+}
+.badge-redraft {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(96, 165, 250, 0.14);
+  color: #93c5fd;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  font: 600 10px var(--mono);
+  text-transform: uppercase;
+}
+.reach-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font: 600 10px var(--mono);
+}
+.reach-pill.reach {
+  background: var(--unlucky-soft);
+  color: var(--unlucky-text);
+  border: 1px solid var(--unlucky-border);
+}
+.reach-pill.steal {
+  background: var(--lucky-soft);
+  color: var(--lucky-text);
+  border: 1px solid var(--lucky-border);
+}
+.timing-chip {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  font: 10px var(--mono);
+  color: var(--ink-secondary);
+}
+
 /* MOBILE CARDS VIEW (NO HORIZONTAL SCROLL) */
 .m-standings-card-list {
   display: flex;
