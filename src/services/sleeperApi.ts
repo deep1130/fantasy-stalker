@@ -67,6 +67,11 @@ export async function getDraftPicks(draftId: string): Promise<SleeperDraftPick[]
   return data || [];
 }
 
+export async function getLeagueTransactions(leagueId: string, round: number): Promise<any[]> {
+  const data = await fetchWithCache<any[]>(`${BASE_URL}/league/${leagueId}/transactions/${round}`);
+  return data || [];
+}
+
 export interface SleeperNFLState {
   week: number;
   season: string;

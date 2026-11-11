@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, LayoutGrid } from 'lucide-react';
-import { SleeperLeague, SleeperLeagueUser, SleeperDraftPick } from '../types/sleeper';
+import { SleeperDraftPick } from '../types/sleeper';
 import { getDraftPicks } from '../services/sleeperApi';
 
 interface DraftBoardModalProps {
-  league: SleeperLeague;
-  users: SleeperLeagueUser[];
+  draftId: string;
+  title: string;
   highlightUserId: string | null;
+  totalTeams?: number;
+  totalRounds?: number;
   onClose: () => void;
 }
 
@@ -20,8 +22,11 @@ const POS_COLORS: Record<string, { bg: string; text: string; border: string }> =
 };
 
 export const DraftBoardModal: React.FC<DraftBoardModalProps> = ({
-  league,
+  draftId,
+  title,
   highlightUserId,
+  totalTeams = 12,
+  totalRounds: propRounds,
   onClose,
 }) => {
   const [picks, setPicks] = useState<SleeperDraftPick[]>([]);
@@ -29,10 +34,10 @@ export const DraftBoardModal: React.FC<DraftBoardModalProps> = ({
 
   useEffect(() => {
     async function fetchPicks() {
-      if (!league.draft_id) return;
+      if (!draftId) return;
       try {
         setIsLoading(true);
-        const data = await getDraftPicks(league.draft_id);
+        const data = await getDraftPicks(draftId);
         setPicks(data);
       } catch (err) {
         console.error('Failed to load draft picks', err);
@@ -41,10 +46,12 @@ export const DraftBoardModal: React.FC<DraftBoardModalProps> = ({
       }
     }
     fetchPicks();
-  }, [league.draft_id]);
+  }, [draftId]);
 
-  const totalRounds = league.settings.draft_rounds || Math.max(...picks.map((p) => p.round), 14);
-  const totalSlots = league.total_rosters || 12;
+  const maxRoundInPicks = picks.length > 0 ? Math.max(...picks.map((p) => p.round)) : 14;
+  const maxSlotInPicks = picks.length > 0 ? Math.max(...picks.map((p) => p.draft_slot || 1)) : totalTeams;
+  const totalRounds = propRounds || maxRoundInPicks;
+  const totalSlots = Math.max(totalTeams, maxSlotInPicks);
 
   const pickGrid = new Map<string, SleeperDraftPick>();
   for (const p of picks) {
@@ -97,7 +104,7 @@ export const DraftBoardModal: React.FC<DraftBoardModalProps> = ({
             <LayoutGrid size={16} style={{ color: 'var(--accent-text)' }} />
             <div>
               <h3 style={{ margin: 0, font: '600 15px var(--display)', color: 'var(--ink)' }}>
-                {league.name} · Draft Board Grid
+                {title} · Draft Board Grid
               </h3>
               <p style={{ margin: '2px 0 0', font: '11px var(--mono)', color: 'var(--muted)' }}>
                 {picks.length} picks · {totalRounds} Rounds · {totalSlots} Teams

@@ -33,6 +33,7 @@ import {
 } from './services/sleeperApi';
 import { buildManagerDossier } from './services/analyzer';
 import { DraftBoardModal } from './components/DraftBoardModal';
+import { ManagerActivityView } from './components/ManagerActivityView';
 import './App.css';
 
 const SAMPLE_USERS = ['deep93', 'matt', 'andy', 'jason'];
@@ -56,9 +57,15 @@ export function App() {
   // Format filter: All, Redraft only, Dynasty only
   const [formatFilter, setFormatFilter] = useState<'all' | 'redraft' | 'dynasty'>('all');
 
-  const [activeTab, setActiveTab] = useState<'league_report' | 'dossier' | 'picks' | 'draftboard'>('league_report');
+  const [activeTab, setActiveTab] = useState<'league_report' | 'dossier' | 'activity' | 'picks'>('league_report');
   const [searchFilter, setSearchFilter] = useState('');
   const [isDraftBoardModalOpen, setIsDraftBoardModalOpen] = useState(false);
+  const [modalDraftData, setModalDraftData] = useState<{
+    draftId: string;
+    title: string;
+    teams?: number;
+    rounds?: number;
+  } | null>(null);
 
   const [isLoadingUser, setIsLoadingUser] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -556,6 +563,14 @@ export function App() {
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('activity')}
+                className={activeTab === 'activity' ? 'selected' : ''}
+              >
+                <LayoutGrid size={12} />
+                <span>Drafts &amp; Activity</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveTab('picks')}
                 className={activeTab === 'picks' ? 'selected' : ''}
               >
@@ -955,7 +970,28 @@ export function App() {
           </div>
         )}
 
-        {/* TAB 3: COMPLETE PICK LOG */}
+        {/* TAB 3: MANAGER ACTIVITY (DRAFTS ACROSS LEAGUES, TRADES, WAIVERS) */}
+        {activeTab === 'activity' && (
+          <div>
+            {scoutProfile ? (
+              <ManagerActivityView
+                user={scoutProfile.user}
+                leagueId={selectedLeague?.league_id || ''}
+                season={selectedSeason}
+                otherDrafts={scoutProfile.otherDrafts}
+                onOpenDraftBoard={(draftId, title, teams, rounds) =>
+                  setModalDraftData({ draftId, title, teams, rounds })
+                }
+              />
+            ) : (
+              <div style={{ padding: '30px', textAlign: 'center', color: 'var(--muted)', background: 'var(--surface)', borderRadius: '8px' }}>
+                Select a manager to inspect their other draft boards, trades, and waiver wire activity.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 4: COMPLETE PICK LOG */}
         {activeTab === 'picks' && scoutProfile && (
           <div className="table-wrap">
             <table>
@@ -1047,13 +1083,18 @@ export function App() {
         )}
       </section>
 
-      {/* DRAFT BOARD MODAL */}
-      {isDraftBoardModalOpen && selectedLeague && (
+      {/* DRAFT BOARD MODAL (FOR CURRENT OR OTHER LEAGUES) */}
+      {(modalDraftData || isDraftBoardModalOpen) && (
         <DraftBoardModal
-          league={selectedLeague}
-          users={leagueUsers}
+          draftId={modalDraftData?.draftId || selectedLeague?.draft_id || ''}
+          title={modalDraftData?.title || selectedLeague?.name || 'Draft Board'}
+          totalTeams={modalDraftData?.teams || selectedLeague?.total_rosters || 12}
+          totalRounds={modalDraftData?.rounds}
           highlightUserId={selectedOpponent?.user_id || null}
-          onClose={() => setIsDraftBoardModalOpen(false)}
+          onClose={() => {
+            setModalDraftData(null);
+            setIsDraftBoardModalOpen(false);
+          }}
         />
       )}
     </main>

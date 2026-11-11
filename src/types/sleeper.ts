@@ -132,12 +132,47 @@ export interface ReachItem {
   draftName?: string;
 }
 
+export interface SleeperTransaction {
+  transaction_id: string;
+  type: 'trade' | 'waiver' | 'free_agent';
+  status: string;
+  created: number;
+  creator: string;
+  leg: number;
+  settings: {
+    waiver_bid?: number;
+    seq?: number;
+    [key: string]: unknown;
+  } | null;
+  adds: Record<string, number> | null;
+  drops: Record<string, number> | null;
+  roster_ids: number[];
+  consenter_ids: number[];
+  draft_picks: {
+    round: number;
+    season: string;
+    owner_id: number;
+    previous_owner_id: number;
+  }[];
+}
+
+export interface ManagerOtherDraft {
+  draftId: string;
+  name: string;
+  season: string;
+  type: string;
+  isDynasty: boolean;
+  teams: number;
+  rounds: number;
+}
+
 export interface ManagerScoutProfile {
   user: SleeperLeagueUser;
   totalDraftsAnalyzed: number;
   totalPicksAnalyzed: number;
   redraftDraftsCount: number;
   dynastyDraftsCount: number;
+  otherDrafts: ManagerOtherDraft[];
   threatLevel: 'TACTICAL MASTERMIND' | 'HIGH THREAT' | 'VALUE HUNTER' | 'WILDCARD' | 'CASUAL';
   threatColor: string;
   dnaBadges: { title: string; desc: string; icon: string }[];

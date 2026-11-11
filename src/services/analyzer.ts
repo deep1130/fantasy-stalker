@@ -355,12 +355,23 @@ export function buildManagerDossier(
     threatColor = 'text-slate-400 bg-slate-500/10 border-slate-500/30';
   }
 
+  const otherDrafts = filteredDrafts.map(({ draft }) => ({
+    draftId: draft.draft_id,
+    name: draft.metadata?.name || `Draft ${draft.season}`,
+    season: draft.season,
+    type: draft.type,
+    isDynasty: isDraftDynasty(draft),
+    teams: draft.settings?.teams || 12,
+    rounds: draft.settings?.rounds || 15,
+  }));
+
   return {
     user: targetUser,
     totalDraftsAnalyzed: completedDraftsCount,
     totalPicksAnalyzed: totalPicks,
     redraftDraftsCount: redraftCount,
     dynastyDraftsCount: dynastyCount,
+    otherDrafts,
     threatLevel,
     threatColor,
     dnaBadges,
