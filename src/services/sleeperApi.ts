@@ -66,3 +66,16 @@ export async function getDraftPicks(draftId: string): Promise<SleeperDraftPick[]
   const data = await fetchWithCache<SleeperDraftPick[]>(`${BASE_URL}/draft/${draftId}/picks`);
   return data || [];
 }
+
+export interface SleeperNFLState {
+  week: number;
+  season: string;
+  season_type: string;
+  league_season?: string;
+  previous_season?: string;
+}
+
+export async function getNFLState(): Promise<SleeperNFLState> {
+  const data = await fetchWithCache<SleeperNFLState>(`${BASE_URL}/state/nfl`);
+  return data;
+}

@@ -17,6 +17,7 @@ import {
   getUserDrafts,
   getDraftPicks,
   getAvatarUrl,
+  getNFLState,
 } from './services/sleeperApi';
 import { buildManagerDossier } from './services/analyzer';
 import { DraftBoardModal } from './components/DraftBoardModal';
@@ -27,7 +28,8 @@ const SAMPLE_USERS = ['matt', 'andy', 'jason'];
 export function App() {
   const [usernameInput, setUsernameInput] = useState('matt');
   const [currentUser, setCurrentUser] = useState<SleeperUser | null>(null);
-  const [selectedSeason, setSelectedSeason] = useState('2024');
+  const [availableSeasons, setAvailableSeasons] = useState<string[]>(['2025', '2024', '2023', '2022']);
+  const [selectedSeason, setSelectedSeason] = useState('2025');
   const [leagues, setLeagues] = useState<SleeperLeague[]>([]);
   const [selectedLeague, setSelectedLeague] = useState<SleeperLeague | null>(null);
 
@@ -44,12 +46,33 @@ export function App() {
   const [isScoutingOpponent, setIsScoutingOpponent] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Initial load
+  // Initial load: dynamically detect current NFL season
   useEffect(() => {
-    handleSearch('matt', '2024');
+    async function init() {
+      try {
+        const nflState = await getNFLState();
+        const curYear = parseInt(nflState.season || '2025', 10);
+        const dynamicSeasons = [
+          String(curYear),
+          String(curYear - 1),
+          String(curYear - 2),
+          String(curYear - 3),
+          String(curYear - 4),
+        ];
+        const unique = Array.from(new Set(dynamicSeasons));
+        setAvailableSeasons(unique);
+        
+        // Check if user has leagues in curYear, otherwise fallback to previous active season
+        setSelectedSeason(String(curYear));
+        await handleSearch('matt', String(curYear), unique);
+      } catch {
+        handleSearch('matt', '2025', ['2025', '2024', '2023', '2022']);
+      }
+    }
+    init();
   }, []);
 
-  const handleSearch = async (username: string, season: string) => {
+  const handleSearch = async (username: string, season: string, seasonList?: string[]) => {
     if (!username.trim()) return;
     try {
       setErrorMsg(null);
@@ -61,7 +84,22 @@ export function App() {
       const user = await getSleeperUser(username);
       setCurrentUser(user);
 
-      const userLeagues = await getUserLeagues(user.user_id, season);
+      let userLeagues = await getUserLeagues(user.user_id, season);
+
+      // If no leagues found in selected season on first search, fallback to 2024 or 2025 where leagues exist
+      if (userLeagues.length === 0 && seasonList && seasonList.length > 0) {
+        for (const s of seasonList) {
+          if (s !== season) {
+            const checkLeagues = await getUserLeagues(user.user_id, s);
+            if (checkLeagues.length > 0) {
+              userLeagues = checkLeagues;
+              setSelectedSeason(s);
+              break;
+            }
+          }
+        }
+      }
+
       setLeagues(userLeagues);
 
       if (userLeagues.length > 0) {
@@ -100,16 +138,18 @@ export function App() {
       setIsScoutingOpponent(true);
       setErrorMsg(null);
 
-      const [drafts2024, drafts2023] = await Promise.all([
-        getUserDrafts(targetUser.user_id, '2024').catch(() => [] as SleeperDraft[]),
-        getUserDrafts(targetUser.user_id, '2023').catch(() => [] as SleeperDraft[]),
-      ]);
-
-      const allDrafts = [...drafts2024, ...drafts2023].filter(
-        (d) => d.status === 'complete' || d.status === 'drafting'
+      // Fetch across all recent seasons (including current, 2025, 2024, 2023)
+      const seasonsToScan = availableSeasons.slice(0, 4);
+      const draftFetches = seasonsToScan.map((s) =>
+        getUserDrafts(targetUser.user_id, s).catch(() => [] as SleeperDraft[])
       );
 
-      const targetDrafts = allDrafts.slice(0, 6);
+      const draftsBySeason = await Promise.all(draftFetches);
+      const allDrafts = draftsBySeason
+        .flat()
+        .filter((d) => d.status === 'complete' || d.status === 'drafting');
+
+      const targetDrafts = allDrafts.slice(0, 8);
       const draftsWithPicks = await Promise.all(
         targetDrafts.map(async (draft) => {
           try {
@@ -195,9 +235,11 @@ export function App() {
               }}
               className="season-select"
             >
-              <option value="2024">2024</option>
-              <option value="2023">2023</option>
-              <option value="2022">2022</option>
+              {availableSeasons.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
             <button
               onClick={() => handleSearch(usernameInput, selectedSeason)}
